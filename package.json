@@ -1,0 +1,16 @@
+{
+  "name": "telegram-group-manager-bot",
+  "version": "1.0.0",
+  "description": "A Telegram bot to manage groups, broadcast messages, and provide analytics.",
+  "main": "telegram_bot.js",
+  "scripts": {
+    "start": "node telegram_bot.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "collections": "^5.1.13",
+    "node-telegram-bot-api": "^0.66.0"
+  }
+}
