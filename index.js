@@ -3,7 +3,7 @@ const { Counter } = require('collections'); // A simple utility, or we can write
 
 // --- Configuration ---
 // It's highly recommended to use environment variables for sensitive data
-const BOT_TOKEN = process.env.YOUR_BOT_TOKEN; // Replace with your bot token
+const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN; // Replace with your bot token
 const ADMIN_PASSWORD = "YOUR_SECRET_PASSWORD"; // Replace with your desired password
 let authorizedUserId = null; // Will be set after successful login
 
