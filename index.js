@@ -38,19 +38,59 @@ bot.on('message', (msg) => {
   const chatId = msg.chat.id;
   const text = msg.text;
 
-  // First, check if the user's chat ID is in our set of authenticated users.
+  // It's possible for a message to not have text (e.g., a photo), so we check for that.
+  if (!text) {
+    return;
+  }
+
+  // --- Public Command ---
+  // Handle the /getid command. This works in any chat (private or group).
+  if (text === '/getid') {
+    console.log(`Responding to /getid in chat ${chatId}`);
+    bot.sendMessage(chatId, `This chat's ID is: \`${chatId}\`\n\nYou can use this ID to send messages to this group.`, { parse_mode: 'Markdown' });
+    return; // Stop processing after handling the command
+  }
+
+  // --- Authenticated User Logic ---
+  // Check if the user's chat ID is in our set of authenticated users.
   if (authenticatedUsers.has(chatId)) {
-    // If they are authenticated, run the normal bot logic.
-    console.log(`Received message from authenticated user ${msg.from.first_name}: "${text}"`);
-    const replyText = `You said: "${text}"`;
-    bot.sendMessage(chatId, replyText);
+    // Handle the /send command for authenticated users.
+    if (text.startsWith('/send ')) {
+      // The command should be in the format: /send [targetChatId] [message]
+      const parts = text.split(' ');
+      if (parts.length < 3) {
+        bot.sendMessage(chatId, 'Invalid format. Please use: `/send [ID] [your message]`', { parse_mode: 'Markdown' });
+        return;
+      }
+      
+      const targetId = parts[1];
+      const messageToSend = parts.slice(2).join(' ');
+
+      console.log(`Authenticated user ${msg.from.first_name} is sending "${messageToSend}" to ${targetId}`);
+      
+      // Send the message to the target group/user.
+      bot.sendMessage(targetId, messageToSend)
+        .then(() => {
+          bot.sendMessage(chatId, `✅ Message successfully sent to ${targetId}.`);
+        })
+        .catch((error) => {
+          console.error('Failed to send message:', error.response.body.description);
+          bot.sendMessage(chatId, `❌ Failed to send message. The bot might not be in that group, or the ID is incorrect.\nError: ${error.response.body.description}`);
+        });
+
+    } else {
+      // If it's not a command, just echo the message back.
+      console.log(`Received message from authenticated user ${msg.from.first_name}: "${text}"`);
+      const replyText = `You said: "${text}"`;
+      bot.sendMessage(chatId, replyText);
+    }
   } else {
+    // --- Authentication Logic for New Users ---
     // If they are not authenticated, check if their message is the password.
     if (text === password) {
-      // If the password is correct, add their chat ID to the set and welcome them.
       authenticatedUsers.add(chatId);
       console.log(`User ${msg.from.first_name} (${chatId}) has authenticated.`);
-      bot.sendMessage(chatId, '✅ Password accepted! You can now use the bot.');
+      bot.sendMessage(chatId, '✅ Password accepted! You can now use the bot.\n\nTo send a message to a group, use the format:\n`/send [GROUP_ID] [your message]`', { parse_mode: 'Markdown' });
     } else {
       // If the password is wrong, tell them to try again.
       console.log(`Failed authentication attempt from ${msg.from.first_name} (${chatId}).`);
