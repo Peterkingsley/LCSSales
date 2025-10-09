@@ -37,6 +37,7 @@ const bot = new TelegramBot(token, { polling: true });
 bot.on('message', (msg) => {
   const chatId = msg.chat.id;
   const text = msg.text;
+  const userId = msg.from.id; // The ID of the user who sent the message
 
   // It's possible for a message to not have text (e.g., a photo), so we check for that.
   if (!text) {
@@ -46,10 +47,29 @@ bot.on('message', (msg) => {
   // --- Public Command ---
   // Handle the /getid command. This works in any chat (private or group).
   if (text === '/getid') {
-    console.log(`Responding to /getid in chat ${chatId}`);
-    bot.sendMessage(chatId, `This chat's ID is: \`${chatId}\`\n\nYou can use this ID to send messages to this group.`, { parse_mode: 'Markdown' });
+    // If the message is from a group, send the group's ID to the user's private chat.
+    if (msg.chat.type === 'group' || msg.chat.type === 'supergroup') {
+      const groupTitle = msg.chat.title;
+      console.log(`User ${msg.from.first_name} requested ID for group "${groupTitle}". Sending to their DM.`);
+
+      // Send the group ID to the user's private chat.
+      bot.sendMessage(userId, `The ID for the group "${groupTitle}" is: \`${chatId}\``, { parse_mode: 'Markdown' })
+        .catch((error) => {
+          // This can fail if the user has never started a private chat with the bot.
+          console.error(`Failed to DM user ${userId}:`, error.response.body.description);
+          bot.sendMessage(chatId, `Hi ${msg.from.first_name}, I couldn't send you a private message. Please start a chat with me first and try again!`);
+        });
+
+      // Send a confirmation message in the group.
+      bot.sendMessage(chatId, `Hi ${msg.from.first_name}, I've sent you the group ID in a private message.`);
+
+    } else {
+      // If the message is from a private chat, just send the user their own ID.
+      bot.sendMessage(chatId, `This is your private chat. Your user ID is: \`${chatId}\``, { parse_mode: 'Markdown' });
+    }
     return; // Stop processing after handling the command
   }
+
 
   // --- Authenticated User Logic ---
   // Check if the user's chat ID is in our set of authenticated users.
