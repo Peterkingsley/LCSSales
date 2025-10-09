@@ -7,7 +7,7 @@ dotenv.config();
 
 // --- IMPORTANT ---
 // We now read the token from the environment variable named 'TELEGRAM_BOT_TOKEN'.
-const token = process.env.TELEGRAM_BOT_TOKEN;
+const token = process.env.YOURTELEGRAM_BOT_TOKEN;
 
 // This check is crucial. If the token isn't found, the bot will log an error and stop.
 if (!token) {
