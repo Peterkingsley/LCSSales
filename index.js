@@ -26,6 +26,11 @@ const pool = new Pool({
 const authenticatedUsers = new Set();
 // This Map will store the group IDs and names the bot is a part of.
 const knownGroups = new Map();
+// --- NEW ---
+// This Map will track what the bot is waiting for from a specific user.
+// e.g., if a user sends '/message', we set their state to 'awaiting_broadcast_message'.
+const userStates = new Map();
+
 
 // --- Functions to Save and Load Data from the Database ---
 async function loadGroupsFromDB() {
@@ -115,7 +120,7 @@ bot.on('message', async (msg) => {
       console.log(`Group ID: ${chatId}`);
       console.log('--------------------------------');
 
-      bot.sendMessage(chatId, `Hello! Thanks for adding me to "${chatTitle}". I've automatically saved your group ID to my database.`);
+      bot.sendMessage(chatId, `GM GM "${chatTitle}"`);
       return;
     }
   }
@@ -148,6 +153,55 @@ bot.on('message', async (msg) => {
   if (chatType === 'private') {
     if (authenticatedUsers.has(userId)) {
 
+        // --- NEW ---
+        // Check if we are waiting for a broadcast message from this user
+        if (userStates.get(userId) === 'awaiting_broadcast_message') {
+            const messageToBroadcast = text;
+            userStates.delete(userId); // Clear the user's state immediately
+
+            if (knownGroups.size === 0) {
+                bot.sendMessage(chatId, 'I haven\'t been added to any groups yet, so I can\'t send your message.');
+                return;
+            }
+
+            bot.sendMessage(chatId, `📡 Sending your message to ${knownGroups.size} group(s)...`);
+
+            const broadcastPromises = [];
+            for (const groupId of knownGroups.keys()) {
+                // We push the promise into an array
+                broadcastPromises.push(bot.sendMessage(groupId, messageToBroadcast));
+            }
+
+            // Promise.allSettled allows us to wait for all messages to be sent,
+            // even if some fail (e.g., bot was kicked from a group).
+            const results = await Promise.allSettled(broadcastPromises);
+
+            let successCount = 0;
+            let failureCount = 0;
+            
+            results.forEach((result, index) => {
+                if (result.status === 'fulfilled') {
+                    successCount++;
+                } else {
+                    failureCount++;
+                    const failedGroupId = Array.from(knownGroups.keys())[index];
+                    console.error(`Failed to send to group ${failedGroupId}:`, result.reason.response.body.description);
+                }
+            });
+
+            bot.sendMessage(chatId, `✅ Broadcast complete.\n\nSuccessfully sent to: ${successCount} groups.\nFailed to send to: ${failureCount} groups.`);
+            return; // Stop further processing for this message
+        }
+
+
+        // --- NEW --- Command to initiate a broadcast to all groups ---
+        if (text === '/message') {
+            userStates.set(userId, 'awaiting_broadcast_message');
+            bot.sendMessage(chatId, '✍️ Please type the message you want to broadcast to all groups.');
+            return;
+        }
+
+
       // --- Command to list all stored groups ---
       if (text === '/listgroups') {
         if (knownGroups.size === 0) {
@@ -163,7 +217,7 @@ bot.on('message', async (msg) => {
         return;
       }
 
-      // Handle the /send command
+      // Handle the /send command for a specific group
       if (text.startsWith('/send ')) {
         const parts = text.split(' ');
         if (parts.length < 3) {
@@ -189,7 +243,8 @@ bot.on('message', async (msg) => {
       if (text === password) {
         authenticatedUsers.add(userId);
         console.log(`User ${msg.from.first_name} (${userId}) has authenticated.`);
-        bot.sendMessage(chatId, '✅ Password accepted! You can now use the bot.\n\nTo see all stored groups, use the `/listgroups` command.\n\nTo send a message, use:\n`/send [GROUP_ID] [your message]`', { parse_mode: 'Markdown' });
+        // --- NEW --- Updated the welcome message
+        bot.sendMessage(chatId, '✅ Password accepted! You can now use the bot.\n\nHere are the available commands:\n\n`/listgroups` - See all groups I\'m in.\n`/send [ID] [message]` - Send to a specific group.\n`/message` - Send a message to *all* groups.', { parse_mode: 'Markdown' });
       } else {
         bot.sendMessage(chatId, '🔒 Please enter the correct password to access this bot.');
       }
@@ -198,4 +253,3 @@ bot.on('message', async (msg) => {
 });
 
 console.log('Telegram bot is running and listening for messages...');
-
