@@ -7,7 +7,7 @@ let dbPool;
 
 // --- Configuration ---
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-// IMPORTANT: Use your deployed URL from the Render output
+// IMPORTANT: Hardcoded to your live Render URL from the deploy logs
 const WEB_URL = 'https://lcssales-0txj.onrender.com'; 
 const SECRET_PATH = `/bot/${TOKEN}`; // Creates a secure, unique path for your webhook
 
@@ -15,7 +15,7 @@ const LOCALCOINSWAP_X_URL = 'https://x.com/LocalCoinSwap_';
 const LOCALCOINSWAP_SIGNUP_URL = 'https://localcoinswap.com/signup';
 const LOCALCOINSWAP_TG_COMMUNITY_URL = 'https://t.me/LocalCoinSwapCommunity';
 
-// 1. Initialize the bot in webhook mode
+// 1. Initialize the bot in webhook mode (polling: false)
 const bot = new TelegramBot(TOKEN, { polling: false }); 
 
 // 2. Set the Webhook: Tell Telegram to send updates to your server's endpoint
@@ -28,17 +28,18 @@ router.use(express.json());
 // 3. Add the Webhook Listener Route
 // This route will receive all updates from Telegram
 router.post(SECRET_PATH, (req, res) => {
-    // Process the update and send an immediate 200 OK response
+    // 💡 DEBUG LOG: Log the receipt of the update to confirm webhook functionality
     if (req.body) {
+        console.log('TELEGRAM WEBHOOK RECEIVED UPDATE:', JSON.stringify(req.body).substring(0, 100) + '...'); 
         bot.processUpdate(req.body);
     }
+    // Important: Always respond with 200 OK immediately
     res.sendStatus(200); 
 });
 
 
 /**
  * Endpoint to send a broadcast message to all users
- * This route is mounted by server.js
  */
 router.post('/api/broadcast', async (req, res) => {
     // Check if dbPool is initialized
@@ -178,7 +179,7 @@ const sendRanking = async (chatId) => {
         const result = await dbPool.query(rankingQuery);
         const topUsers = result.rows;
 
-        let rankingMessage = '🏆 **Top 5 LocalCoinSwap Referrers** 🏆\\n\\n';
+        let rankingMessage = '🏆 **Top 5 LocalCoinSwap Referrers** 🏆\n\n';
 
         if (topUsers.length === 0) {
             rankingMessage += 'No completed referrals yet! Be the first one!';
@@ -193,7 +194,7 @@ const sendRanking = async (chatId) => {
                 // Prefer display name, fallback to username, fallback to a generic name
                 const userName = user.display_name || (user.username ? `@${user.username}` : `User ${user.id}`);
 
-                rankingMessage += `${medal} #${index + 1}: ${userName} (${user.referral_count} referrals)\\n`;
+                rankingMessage += `${medal} #${index + 1}: ${userName} (${user.referral_count} referrals)\n`;
             });
         }
         
@@ -207,7 +208,7 @@ const sendRanking = async (chatId) => {
 
 /**
  * Ensures the user exists in the database.
- * FIX: Now uses the BIGINT 'chat_id' column to store the large Telegram User ID, 
+ * FIX: Uses the BIGINT 'chat_id' column to store the large Telegram User ID, 
  * avoiding the "out of range" error, and lets the internal 'id' be auto-generated.
  */
 const ensureUserExists = async (msg) => {
@@ -215,7 +216,7 @@ const ensureUserExists = async (msg) => {
     const fromId = user.id; // Telegram User ID (a large BIGINT number)
     const username = user.username || null;
     const displayName = user.first_name + (user.last_name ? ' ' + user.last_name : '');
-    // const chatId = msg.chat.id; // Not strictly needed as we use the unique fromId
+    // Note: We use the unique 'fromId' (user.id) for lookup/storage, not msg.chat.id, as per standard practice.
 
     try {
         // Query by the chat_id (which is unique and BIGINT)
@@ -258,7 +259,7 @@ bot.onText(/\/start (.+)/, async (msg, match) => {
         const isNewUser = await ensureUserExists(msg);
 
         // 1. Check if the referrer exists and is registered.
-        // NOTE: We now use the referrer's chat_id (which is their BIGINT Telegram ID) to look up the user.
+        // We use the referrer's ID (the BIGINT Telegram ID passed in the link) to look up the user.
         const referrerCheck = await dbPool.query(
             "SELECT id, localcoinswap_id FROM users WHERE chat_id = $1 AND localcoinswap_id IS NOT NULL", 
             [referralId]
