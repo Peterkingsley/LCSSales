@@ -1,24 +1,40 @@
 require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
-const express = require('express'); // <-- Keep Express here to define the router
+const express = require('express');
 
 // Placeholder for the database pool instance (it will be set by server.js)
 let dbPool;
 
 // --- Configuration ---
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const WEB_URL = 'https://your-server-url.onrender.com'; // IMPORTANT: Replace with your actual server URL
-const LOCALCOINSWAP_X_URL = 'https://x.com/LocalCoinSwap_'; // Link to X/Twitter profile
-const LOCALCOINSWAP_SIGNUP_URL = 'https://localcoinswap.com/signup'; // Link to signup page
-const LOCALCOINSWAP_TG_COMMUNITY_URL = 'https://t.me/LocalCoinSwapCommunity'; // Link to Telegram community
+// IMPORTANT: Use your deployed URL from the Render output
+const WEB_URL = 'https://lcssales-0txj.onrender.com'; 
+const SECRET_PATH = `/bot/${TOKEN}`; // Creates a secure, unique path for your webhook
 
-// The bot initialization uses the correct TELEGRAM_BOT_TOKEN variable
-const bot = new TelegramBot(TOKEN, { polling: true });
+const LOCALCOINSWAP_X_URL = 'https://x.com/LocalCoinSwap_';
+const LOCALCOINSWAP_SIGNUP_URL = 'https://localcoinswap.com/signup';
+const LOCALCOINSWAP_TG_COMMUNITY_URL = 'https://t.me/LocalCoinSwapCommunity';
 
-// --- Express Router Setup for Push Notifications ---
-// Use express.Router() to define endpoints without running the main app instance
+// 1. Initialize the bot in webhook mode
+const bot = new TelegramBot(TOKEN, { polling: false }); 
+
+// 2. Set the Webhook: Tell Telegram to send updates to your server's endpoint
+bot.setWebHook(`${WEB_URL}${SECRET_PATH}`);
+
+// --- Express Router Setup for Webhook Listener and API Endpoints ---
 const router = express.Router();
 router.use(express.json());
+
+// 3. Add the Webhook Listener Route
+// This route will receive all updates from Telegram
+router.post(SECRET_PATH, (req, res) => {
+    // Process the update and send an immediate 200 OK response
+    if (req.body) {
+        bot.processUpdate(req.body);
+    }
+    res.sendStatus(200); 
+});
+
 
 /**
  * Endpoint to send a broadcast message to all users
@@ -190,33 +206,33 @@ const sendRanking = async (chatId) => {
 };
 
 /**
- * Ensures the user exists in the database and returns a boolean indicating if they are new.
+ * Ensures the user exists in the database.
+ * FIX: Now uses the BIGINT 'chat_id' column to store the large Telegram User ID, 
+ * avoiding the "out of range" error, and lets the internal 'id' be auto-generated.
  */
 const ensureUserExists = async (msg) => {
     const user = msg.from;
-    const fromId = user.id;
+    const fromId = user.id; // Telegram User ID (a large BIGINT number)
     const username = user.username || null;
     const displayName = user.first_name + (user.last_name ? ' ' + user.last_name : '');
-    const chatId = msg.chat.id;
+    // const chatId = msg.chat.id; // Not strictly needed as we use the unique fromId
 
     try {
-        const checkUserQuery = "SELECT id, chat_id FROM users WHERE id = $1";
-        const checkUserResult = await dbPool.query(checkUserQuery, [fromId]);
+        // Query by the chat_id (which is unique and BIGINT)
+        const checkUserQuery = "SELECT id FROM users WHERE chat_id = $1";
+        const checkUserResult = await dbPool.query(checkUserQuery, [fromId]); 
 
         if (checkUserResult.rows.length === 0) {
-            // User does not exist, insert them
+            // User does not exist, insert them. Let the internal 'id' be auto-generated.
             const insertUserQuery = `
-                INSERT INTO users (id, chat_id, username, display_name, joined_at)
-                VALUES ($1, $2, $3, $4, NOW())
+                INSERT INTO users (chat_id, username, display_name, joined_at)
+                VALUES ($1, $2, $3, NOW())
             `;
-            await dbPool.query(insertUserQuery, [fromId, chatId, username, displayName]);
+            // $1 = fromId (BIGINT), $2 = username, $3 = displayName
+            await dbPool.query(insertUserQuery, [fromId, username, displayName]);
             return true; // New user
         } else {
-            // User exists, but check if chat_id needs update (e.g., if they moved from group to private chat)
-            const existingUser = checkUserResult.rows[0];
-            if (existingUser.chat_id !== chatId) {
-                 await dbPool.query("UPDATE users SET chat_id = $1 WHERE id = $2", [chatId, fromId]);
-            }
+            // User exists. Optional: Update username/display_name if needed.
             return false; // Existing user
         }
     } catch (err) {
@@ -241,9 +257,10 @@ bot.onText(/\/start (.+)/, async (msg, match) => {
     try {
         const isNewUser = await ensureUserExists(msg);
 
-        // 1. Check if the referrer exists and is registered
+        // 1. Check if the referrer exists and is registered.
+        // NOTE: We now use the referrer's chat_id (which is their BIGINT Telegram ID) to look up the user.
         const referrerCheck = await dbPool.query(
-            "SELECT id, localcoinswap_id FROM users WHERE id = $1 AND localcoinswap_id IS NOT NULL", 
+            "SELECT id, localcoinswap_id FROM users WHERE chat_id = $1 AND localcoinswap_id IS NOT NULL", 
             [referralId]
         );
         const referrer = referrerCheck.rows[0];
@@ -251,7 +268,7 @@ bot.onText(/\/start (.+)/, async (msg, match) => {
         if (referrer) {
             if (isNewUser) {
                 // New user referred by a registered user. Proceed to register referral.
-                // Pass the referrer's user ID to the registration prompt for later linking
+                // Pass the referrer's internal, INTEGER user ID to the registration prompt for later linking
                 await sendRegistrationPrompt(chatId, referrer.id); 
                 bot.sendMessage(chatId, 
                     `You were invited by a friend! Finish registration to earn rewards and confirm the referral.`, 

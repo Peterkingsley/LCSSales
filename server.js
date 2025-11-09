@@ -4,6 +4,7 @@ const { Pool } = require('pg');
 const cors = require('cors');
 
 // IMPORTANT: Import the Express Router (aliased as telegramRouter) and the function to set the DB pool
+// These exports come from the updated telegram.js file.
 const { router: telegramRouter, setDbPool } = require('./telegram');
 
 const app = express();
@@ -29,8 +30,8 @@ pool.connect()
 
 // --- API Endpoints ---
 
-// 1. Mount the Telegram bot's API endpoints (includes /api/broadcast)
-// 🐛 FIX: Use the correctly imported variable: telegramRouter
+// 1. Mount the Telegram bot's API endpoints (includes /api/broadcast AND the /bot/:token webhook listener)
+// Use the correctly imported variable: telegramRouter
 app.use(telegramRouter);
 
 // 2. Existing endpoint to get user list for the dashboard
@@ -47,4 +48,5 @@ app.get('/users', async (req, res) => {
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
+// Export the pool if other modules need direct database access (optional, but good practice)
 module.exports = pool;
