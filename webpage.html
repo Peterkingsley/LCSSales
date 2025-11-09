@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LocalCoinSwap Referral Dashboard</title>
+  <!-- Load Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', sans-serif; background-color: #f7f9fb; }
+    /* Custom Scrollbar for better aesthetics */
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: #f1f1f1; }
+    ::-webkit-scrollbar-thumb { background: #3b82f6; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #2563eb; }
+  </style>
+</head>
+<body class="p-4 md:p-8">
+
+  <div class="max-w-6xl mx-auto space-y-8">
+    
+    <!-- Header -->
+    <header class="text-center">
+      <h1 class="text-4xl font-extrabold text-gray-900 mb-2">LocalCoinSwap Referral Management</h1>
+      <p class="text-gray-600">Admin panel for tracking referrals and broadcasting messages.</p>
+    </header>
+
+    <!-- Broadcast Panel -->
+    <div id="broadcast-panel" class="bg-white p-6 rounded-xl shadow-lg border border-indigo-100">
+        <h2 class="text-2xl font-bold text-indigo-700 mb-4">📢 Send Broadcast Notification</h2>
+        <div id="broadcast-status" class="hidden p-3 mb-4 rounded-lg text-sm" role="alert"></div>
+        
+        <textarea id="broadcast-message" rows="4" 
+                  class="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 transition duration-150"
+                  placeholder="Enter the message to be broadcast to all registered users (those with a LocalCoinSwap ID)."></textarea>
+        
+        <!-- Embedded Command Selection -->
+        <div class="mt-4">
+            <h3 class="font-semibold text-gray-700 mb-2">Select Embedded Commands (Optional)</h3>
+            <div id="command-checkboxes" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+                <label class="flex items-center space-x-2 p-2 bg-indigo-50 rounded-lg cursor-pointer hover:bg-indigo-100 transition">
+                    <input type="checkbox" name="command" value="X" class="rounded text-indigo-600 focus:ring-indigo-500">
+                    <span class="text-sm font-medium text-gray-700">Join X</span>
+                </label>
+                <label class="flex items-center space-x-2 p-2 bg-indigo-50 rounded-lg cursor-pointer hover:bg-indigo-100 transition">
+                    <input type="checkbox" name="command" value="BUY" class="rounded text-indigo-600 focus:ring-indigo-500">
+                    <span class="text-sm font-medium text-gray-700">Buy</span>
+                </label>
+                <label class="flex items-center space-x-2 p-2 bg-indigo-50 rounded-lg cursor-pointer hover:bg-indigo-100 transition">
+                    <input type="checkbox" name="command" value="SELL" class="rounded text-indigo-600 focus:ring-indigo-500">
+                    <span class="text-sm font-medium text-gray-700">Sell</span>
+                </label>
+                <label class="flex items-center space-x-2 p-2 bg-indigo-50 rounded-lg cursor-pointer hover:bg-indigo-100 transition">
+                    <input type="checkbox" name="command" value="BUY_USDT" class="rounded text-indigo-600 focus:ring-indigo-500">
+                    <span class="text-sm font-medium text-gray-700">Buy USDT</span>
+                </label>
+                <label class="flex items-center space-x-2 p-2 bg-indigo-50 rounded-lg cursor-pointer hover:bg-indigo-100 transition">
+                    <input type="checkbox" name="command" value="SELL_USDT" class="rounded text-indigo-600 focus:ring-indigo-500">
+                    <span class="text-sm font-medium text-gray-700">Sell USDT</span>
+                </label>
+            </div>
+        </div>
+
+        <button id="send-broadcast" 
+                class="mt-4 w-full md:w-auto px-6 py-3 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition duration-150 shadow-md hover:shadow-lg disabled:opacity-50"
+                onclick="sendBroadcast()">
+          Send Broadcast
+        </button>
+        <p class="mt-2 text-xs text-gray-500">Note: This will call the <code>/api/broadcast</code> endpoint on your server.</p>
+    </div>
+
+    <!-- Referral Data Table (Unchanged) -->
+    <div class="bg-white p-6 rounded-xl shadow-lg border border-gray-100">
+      <h2 class="text-2xl font-bold text-gray-800 mb-4">👥 All Registered Users</h2>
+      <div class="overflow-x-auto">
+        <table id="users-table" class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-indigo-50">
+            <tr>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider rounded-tl-lg">Telegram ID</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name/Display Name</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">LocalCoinSwap ID</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider rounded-tr-lg">Referrals Count</th>
+            </tr>
+          </thead>
+          <tbody class="bg-white divide-y divide-gray-200" id="users-table-body">
+            <!-- Data will be inserted here -->
+          </tbody>
+        </table>
+      </div>
+      <p id="loading-message" class="text-center py-4 text-gray-500">Loading user data...</p>
+    </div>
+
+    <!-- Placeholder for the correct server URL -->
+    <div class="text-center text-sm text-red-500 p-4 bg-red-50 rounded-lg">
+        🚨 **IMPORTANT:** You must replace <code>https://your-server-url.onrender.com</code> in the script below with your actual deployed server URL.
+    </div>
+  </div>
+
+  <script>
+    // --- Configuration ---
+    const SERVER_URL = 'https://your-server-url.onrender.com'; 
+    const USERS_ENDPOINT = `${SERVER_URL}/users`;
+    const BROADCAST_ENDPOINT = `${SERVER_URL}/api/broadcast`;
+
+    // Utility to show status messages
+    function showStatus(message, isSuccess) {
+      const statusDiv = document.getElementById('broadcast-status');
+      statusDiv.classList.remove('hidden', 'bg-red-100', 'text-red-700', 'bg-green-100', 'text-green-700');
+      
+      if (isSuccess) {
+        statusDiv.classList.add('bg-green-100', 'text-green-700');
+      } else {
+        statusDiv.classList.add('bg-red-100', 'text-red-700');
+      }
+      
+      statusDiv.textContent = message;
+      setTimeout(() => statusDiv.classList.add('hidden'), 5000); // Hide after 5 seconds
+    }
+
+    // Function to fetch and render user data
+    async function fetchUsers() {
+      const tbody = document.getElementById('users-table-body');
+      const loading = document.getElementById('loading-message');
+      loading.classList.remove('hidden');
+      tbody.innerHTML = ''; 
+
+      try {
+        const res = await fetch(USERS_ENDPOINT);
+        if (!res.ok) throw new Error('Network response was not ok');
+        
+        const data = await res.json();
+
+        if (data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" class="text-center py-4 text-gray-500">No users found.</td></tr>';
+        } else {
+            data.forEach(u => {
+              // Ensure fields are available, using fallback for display
+              const displayName = u.display_name || u.username || 'N/A';
+              const localcoinswapId = u.localcoinswap_id || 'Not Registered';
+              const row = `
+                <tr class="hover:bg-gray-50 transition duration-100">
+                  <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${u.id}</td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${displayName}</td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${localcoinswapId}</td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-700">${u.referral_count || 0}</td>
+                </tr>
+              `;
+              tbody.innerHTML += row;
+            });
+        }
+      } catch (error) {
+        console.error('Fetch error:', error);
+        tbody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-red-500">Error fetching data: ${error.message}</td></tr>`;
+      } finally {
+        loading.classList.add('hidden');
+      }
+    }
+
+    // Function to handle broadcast
+    async function sendBroadcast() {
+      const messageEl = document.getElementById('broadcast-message');
+      const sendButton = document.getElementById('send-broadcast');
+      const message = messageEl.value.trim();
+      
+      // Get selected commands
+      const selectedCommands = Array.from(document.querySelectorAll('input[name="command"]:checked')).map(cb => cb.value);
+
+      if (!message) {
+        return showStatus('Please enter a message before sending the broadcast.', false);
+      }
+
+      sendButton.disabled = true;
+      sendButton.textContent = 'Sending...';
+
+      try {
+        const res = await fetch(BROADCAST_ENDPOINT, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: message, commands: selectedCommands }) // Send selected commands
+        });
+
+        const data = await res.json();
+
+        if (res.ok) {
+          showStatus(`Broadcast sent successfully! Attempted to reach ${data.totalUsers} users.`, true);
+          messageEl.value = ''; // Clear the text area
+          // Uncheck all boxes
+          document.querySelectorAll('input[name="command"]:checked').forEach(cb => cb.checked = false);
+        } else {
+          showStatus(`Broadcast failed: ${data.error || 'Server error'}`, false);
+        }
+
+      } catch (error) {
+        console.error('Broadcast error:', error);
+        showStatus('A network error occurred while trying to send the broadcast.', false);
+      } finally {
+        sendButton.disabled = false;
+        sendButton.textContent = 'Send Broadcast';
+      }
+    }
+
+    // Fetch data on page load
+    window.onload = fetchUsers;
+
+  </script>
+</body>
+</html>
