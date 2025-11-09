@@ -4,7 +4,7 @@ const { Pool } = require('pg');
 const cors = require('cors');
 
 // IMPORTANT: Import the Express application (routes) defined in telegram.js
-const { app: telegramApp } = require('./telegram');
+const { router: telegramRouter, setDbPool } = require('./telegram');
 
 const app = express();
 app.use(cors());
