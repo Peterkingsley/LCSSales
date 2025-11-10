@@ -17,7 +17,7 @@ const LOCALCOINSWAP_BASE_REFERRAL_URL = 'https://localcoinswap.com/?ref='; // Ba
 
 // 💡 NEW: The username of the group for the membership check
 // Use your specific group ID: @localtest21
-const LOCALCOINSWAP_TG_COMMUNITY_ID = '@localtest21'; 
+const LOCALCOINSWAP_TG_COMMUNITY_ID = '@localtest21';
 
 // --- Express Setup ---
 const router = express.Router();
@@ -44,6 +44,7 @@ const getUserState = async (chatId) => {
         return null;
     }
     try {
+        // Fetch user_state from the users table
         const result = await dbPool.query("SELECT user_state FROM users WHERE chat_id = $1", [chatId]);
         return result.rows.length > 0 ? result.rows[0].user_state : null;
     } catch (err) {
@@ -198,7 +199,7 @@ To get started, follow our X account below 👇`,
           
         } else {
           // Failure: User is not a member (status is 'left' or 'kicked')
-          // Fetch the stored twitter handle for re-display (assumes dbPool is available and user record exists)
+          // Fetch the stored twitter handle for re-display 
           let twitter = 'your X username';
           if (dbPool) {
              const result = await dbPool.query("SELECT display_name FROM users WHERE chat_id = $1", [chatId]);
@@ -232,7 +233,6 @@ X Username: *@${twitter}*`,
         console.error('getChatMember/DB Error:', error.message);
         await bot.answerCallbackQuery(query.id, 'An API or Database error occurred. Please try again.', true);
       }
-      // NOTE: Removed the bot.answerCallbackQuery at the end of this block as it's answered at the start.
       break;
 
 
@@ -240,14 +240,21 @@ X Username: *@${twitter}*`,
     // AFTER FOLLOWING X
     // -------------------------
     case 'follow_done':
+      // 💡 FIX: Set the state in the database immediately
+      if (dbPool) {
+            await dbPool.query(
+                "UPDATE users SET user_state = $1 WHERE chat_id = $2 ON CONFLICT (chat_id) DO UPDATE SET user_state = $1", // Ensure user is in DB
+                ['awaiting_twitter', chatId]
+            );
+        } else {
+            // Handle case where dbPool is null (shouldn't happen if server.js is correct)
+            console.error('DB Pool not available in follow_done handler.');
+        }
+
       await bot.sendMessage(chatId,
         `Please enter your *X (Twitter) username* (without @).`,
         { parse_mode: 'Markdown' }
       );
-      // 💡 REMOVED: userStates[chatId] = { step: 'awaiting_twitter' }; // Set state to await Twitter handle
-      // This state is now managed within the bot.on('message') handler itself to be consistent
-      // with the database-driven state model. We'll rely on the existing logic in bot.on('message')
-      // to handle the 'awaiting_twitter' input.
       break;
 
     // -------------------------
@@ -304,10 +311,9 @@ X Username: *@${twitter}*`,
 // ====================================================================
 // ✍️ HANDLE TEXT INPUT (for usernames and IDs)
 // ====================================================================
-// 💡 NOTE: The in-memory 'userStates' object is now primarily for 'awaiting_twitter'
-// and will be removed or transitioned for better DB reliance. 
-// For now, we'll keep the existing structure but add the new DB check logic.
-const userStates = {}; // { chatId: { step: 'awaiting_twitter' | 'awaiting_membership_check', twitter: 'handle', telegram: 'handle' } }
+// 💡 IMPORTANT: The unreliable in-memory 'userStates' object has been removed.
+// All state management for text input now relies on the database.
+// const userStates = {}; // REMOVED
 
 bot.on('message', async (msg) => {
   const chatId = msg.chat.id;
@@ -316,17 +322,58 @@ bot.on('message', async (msg) => {
 
   if (!text) return; // Ignore messages without text
 
-  // 💡 NEW: Check for /start or /menu commands and handle them, then return
+  // Check for /start or /menu commands and handle them, then return
   if (text.startsWith('/')) {
-    // Other commands are handled by bot.onText
+    // Commands are handled by bot.onText
     if (text.toLowerCase() === '/start' || text.toLowerCase() === '/menu') {
         return; 
     }
   }
 
-  // 💡 NEW: Get user state from DB
+  // 1. Get user state from DB
   const userState = await getUserState(chatId);
 
+  // ===================================================================
+  // 💡 FIX: Handle AWAITING_TWITTER state (User enters X handle)
+  // ===================================================================
+  if (userState === 'awaiting_twitter') {
+    const twitter = text.trim().replace(/^@/, ''); // Remove optional leading @
+    // Use the user's Telegram username from their profile, or a fallback
+    const telegram = msg.from.username ? msg.from.username.trim() : `tg_user_${userId}`;
+    
+    // 2. Save the X handle and update state to 'awaiting_membership_check'
+    if (dbPool) {
+      try {
+        // Save data, using the user's provided X handle and their Telegram username
+        await dbPool.query(
+          // Uses ON CONFLICT to update existing users or insert new ones
+          "INSERT INTO users (id, chat_id, username, display_name, user_state) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (chat_id) DO UPDATE SET username = EXCLUDED.username, display_name = EXCLUDED.display_name, user_state = EXCLUDED.user_state",
+          [userId, userId, telegram, twitter, 'awaiting_membership_check'] // Mapping: id, chat_id, telegram_handle, twitter_handle, user_state
+        );
+      } catch (err) {
+        console.error('DB SAVE ERROR (after twitter handle):', err.message);
+        return bot.sendMessage(chatId, "🚫 A database error occurred. Please try again or type /menu.");
+      }
+    }
+
+    // 3. Prompt for community join
+    await bot.sendMessage(chatId, 
+      `Perfect! ✅  
+X Username: *@${twitter}* One last step! Join our Telegram Community to complete your campaign registration 👇
+*Once you have joined, click 'I have joined' below to confirm your status.*`,
+      {
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '💬 Join Telegram Community', url: LOCALCOINSWAP_TG_COMMUNITY_URL }],
+            [{ text: '✅ I have joined', callback_data: 'check_membership' }] // New Check button
+          ]
+        }
+      }
+    );
+    return;
+  }
+  
   // ===================================================================
   // 💡 NEW: Handle AWAITING_LOCALCOINSWAP_ID state
   // ===================================================================
@@ -383,50 +430,12 @@ bot.on('message', async (msg) => {
     return; // Stop processing this message as the conversation step is complete
   }
 
-  // --- Existing Logic for 'awaiting_twitter' using the in-memory state ---
-  // This state is set in the 'follow_done' callback and is still needed
-  // until the in-memory state is fully replaced by DB state for this step.
-  if (userStates[chatId] && userStates[chatId].step === 'awaiting_twitter') {
-    const twitter = text.trim().replace(/^@/, ''); // Remove optional leading @
-    // Use the user's Telegram username from their profile, or a fallback
-    const telegram = msg.from.username ? msg.from.username.trim() : `tg_user_${userId}`;
-    
-    userStates[chatId].twitter = twitter; // store twitter
-    userStates[chatId].telegram = telegram; // store Telegram handle for display/later use
-    userStates[chatId].step = 'awaiting_membership_check'; // set next step: waiting for button click
-
-    // Optionally: Save initial data to DB
-    if (dbPool) {
-      try {
-        // Save data, using the user's provided X handle and their Telegram username
-        await dbPool.query(
-          // Uses ON CONFLICT to update existing users or insert new ones
-          "INSERT INTO users (id, chat_id, username, display_name, user_state) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (chat_id) DO UPDATE SET username = EXCLUDED.username, display_name = EXCLUDED.display_name, user_state = EXCLUDED.user_state",
-          [userId, userId, telegram, twitter, 'awaiting_membership_check'] // Mapping: id, chat_id, telegram_handle, twitter_handle, user_state
-        );
-      } catch (err) {
-        console.error('DB SAVE ERROR (after twitter handle):', err.message);
-      }
-    }
-
-    // 💡 MODIFIED: Provide the Join link and the "I have joined" button
-    await bot.sendMessage(chatId, 
-      `Perfect! ✅  
-X Username: *@${twitter}* One last step! Join our Telegram Community to complete your campaign registration 👇
-*Once you have joined, click 'I have joined' below to confirm your status.*`,
-      {
-        parse_mode: 'Markdown',
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: '💬 Join Telegram Community', url: LOCALCOINSWAP_TG_COMMUNITY_URL }],
-            [{ text: '✅ I have joined', callback_data: 'check_membership' }] // New Check button
-          ]
-        }
-      }
-    );
-    return;
+  // Default response if not in any active state
+  if (userState === 'initial' || userState === 'active' || userState === 'awaiting_membership_check') {
+    // Ignore non-command messages when the user is waiting for a button click or is active.
+    // Optionally: send a gentle prompt to use /menu
+    // bot.sendMessage(chatId, "Please use the menu buttons or type /menu to continue.");
   }
-  // The 'awaiting_telegram' step has been removed.
 });
 
 
