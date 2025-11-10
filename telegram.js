@@ -240,11 +240,17 @@ X Username: *@${twitter}*`,
     // AFTER FOLLOWING X
     // -------------------------
     case 'follow_done':
-      // 💡 FIX: Set the state in the database immediately
+      // 💡 FIX: Set the state in the database immediately using a proper UPSERT.
       if (dbPool) {
             await dbPool.query(
-                "UPDATE users SET user_state = $1 WHERE chat_id = $2 ON CONFLICT (chat_id) DO UPDATE SET user_state = $1", // Ensure user is in DB
-                ['awaiting_twitter', chatId]
+                // UPSERT: Insert a new minimal user record or update the state of an existing one.
+                `
+                INSERT INTO users (id, chat_id, user_state) 
+                VALUES ($1, $2, $3) 
+                ON CONFLICT (chat_id) 
+                DO UPDATE SET user_state = EXCLUDED.user_state
+                `,
+                [chatId, chatId, 'awaiting_twitter']
             );
         } else {
             // Handle case where dbPool is null (shouldn't happen if server.js is correct)
@@ -347,7 +353,16 @@ bot.on('message', async (msg) => {
         // Save data, using the user's provided X handle and their Telegram username
         await dbPool.query(
           // Uses ON CONFLICT to update existing users or insert new ones
-          "INSERT INTO users (id, chat_id, username, display_name, user_state) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (chat_id) DO UPDATE SET username = EXCLUDED.username, display_name = EXCLUDED.display_name, user_state = EXCLUDED.user_state",
+          // FIX: Use multi-line template literal for robust SQL parsing
+          `
+            INSERT INTO users (id, chat_id, username, display_name, user_state) 
+            VALUES ($1, $2, $3, $4, $5) 
+            ON CONFLICT (chat_id) 
+            DO UPDATE SET 
+              username = EXCLUDED.username, 
+              display_name = EXCLUDED.display_name, 
+              user_state = EXCLUDED.user_state
+          `,
           [userId, userId, telegram, twitter, 'awaiting_membership_check'] // Mapping: id, chat_id, telegram_handle, twitter_handle, user_state
         );
       } catch (err) {
