@@ -96,7 +96,6 @@ bot.on('callback_query', async (query) => {
     // -------------------------
     case 'join_campaign':
       // Existing logic to start the campaign flow
-      // ... (rest of the join_campaign case)
       await bot.sendMessage(chatId,
         `🎉 *Welcome to the LocalCoinSwap Referral Campaign!* Where P2P traders make the most out of the market.  
 
@@ -161,7 +160,8 @@ You can now access the full menu.`,
           
         } else {
           // Failure: User is not a member (status is 'left' or 'kicked')
-          const { twitter, telegram } = userStates[chatId]; 
+          // Use the stored twitter handle for re-display
+          const { twitter } = userStates[chatId]; 
 
           await bot.answerCallbackQuery(query.id, '❌ Please join the community first to proceed.', true);
           
@@ -169,7 +169,7 @@ You can now access the full menu.`,
           await bot.editMessageText(
             `❌ *Membership check failed.* Please ensure you have joined the Telegram Community and then click the 'I have joined' button again.
 
-X Username: *@${twitter}* Telegram: *@${telegram}* `,
+X Username: *@${twitter}*`,
             {
               chat_id: chatId,
               message_id: query.message.message_id,
@@ -200,7 +200,7 @@ X Username: *@${twitter}* Telegram: *@${telegram}* `,
         { parse_mode: 'Markdown' }
       );
       // Store user’s state temporarily
-      userStates[chatId] = { step: 'awaiting_twitter' }; // Use object for state management
+      userStates[chatId] = { step: 'awaiting_twitter' }; // Set state to await Twitter handle
       break;
 
     // -------------------------
@@ -257,7 +257,7 @@ X Username: *@${twitter}* Telegram: *@${telegram}* `,
 // ====================================================================
 // ✍️ HANDLE TEXT INPUT (for usernames)
 // ====================================================================
-const userStates = {}; // { chatId: { step: 'awaiting_twitter' | 'awaiting_telegram' | 'awaiting_membership_check', twitter: 'handle', telegram: 'handle' } }
+const userStates = {}; // { chatId: { step: 'awaiting_twitter' | 'awaiting_membership_check', twitter: 'handle', telegram: 'handle' } }
 
 bot.on('message', async (msg) => {
   const chatId = msg.chat.id;
@@ -266,56 +266,34 @@ bot.on('message', async (msg) => {
 
   if (!userStates[chatId] || !userStates[chatId].step) return; // no active state
 
-  // --- Step 1: Expecting Twitter username
+  // --- Step 1 (Combined): Expecting Twitter username and proceeding to check
   if (userStates[chatId].step === 'awaiting_twitter') {
-    userStates[chatId].twitter = text; // store twitter
-    userStates[chatId].step = 'awaiting_telegram'; // set next step
+    const twitter = text.trim();
+    // Use the user's Telegram username from their profile, or a fallback
+    const telegram = msg.from.username ? msg.from.username.trim() : `tg_user_${userId}`;
     
-    await bot.sendMessage(chatId, 
-      `Got it! Thanks *@${text}* 👏  
-
-Now please enter your *Telegram handle* (without @).`, 
-      { parse_mode: 'Markdown' });
-  }
-
-  // --- Step 2: Expecting Telegram handle
-  else if (userStates[chatId].step === 'awaiting_telegram') {
-    const twitter = userStates[chatId].twitter;
-    const telegram = text;
-    userStates[chatId].telegram = telegram; // store telegram handle
+    userStates[chatId].twitter = twitter; // store twitter
+    userStates[chatId].telegram = telegram; // store Telegram handle for display/later use
     userStates[chatId].step = 'awaiting_membership_check'; // set next step: waiting for button click
 
     // Optionally: Save initial data to DB
     if (dbPool) {
       try {
-        // Note: This INSERT query assumes you have added a 'telegram' column to the 'users' table
-        // and that you are inserting into 'users' or 'campaign_participants'
+        // Save data, using the user's provided X handle and their Telegram username
         await dbPool.query(
-          // Assuming INSERT into a table like 'users' or 'campaign_participants'
-          // I'm using the structure from your previous code logic
-          "INSERT INTO users (chat_id, username, display_name, joined_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (chat_id) DO UPDATE SET username = EXCLUDED.username",
-          [userId, telegram, twitter] // Mapping: chat_id, telegram, twitter
+          // Uses ON CONFLICT to update existing users or insert new ones
+          "INSERT INTO users (id, chat_id, username, display_name, user_state) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (chat_id) DO UPDATE SET username = EXCLUDED.username, display_name = EXCLUDED.display_name, user_state = EXCLUDED.user_state",
+          [userId, userId, telegram, twitter, 'awaiting_membership_check'] // Mapping: id, chat_id, telegram_handle, twitter_handle, user_state
         );
-        // And an initial update for the campaign data
-        // Assuming a table dedicated to campaign sign-ups if not using the main 'users' table
-        // Since the 'users' table exists, I'll use that as the primary user record
-        // The original code was inserting into a missing 'campaign_participants', I'll update the 'users' table if it exists:
-        if (dbPool) {
-            await dbPool.query(
-                "INSERT INTO users (id, chat_id, username, display_name, user_state) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (chat_id) DO UPDATE SET username = EXCLUDED.username, display_name = EXCLUDED.display_name",
-                [userId, userId, telegram, twitter, 'awaiting_membership_check']
-            );
-        }
-
       } catch (err) {
-        console.error('DB SAVE ERROR (after telegram handle):', err.message);
+        console.error('DB SAVE ERROR (after twitter handle):', err.message);
       }
     }
-    
+
     // 💡 MODIFIED: Provide the Join link and the "I have joined" button
     await bot.sendMessage(chatId, 
       `Perfect! ✅  
-X Username: *@${twitter}* Telegram: *@${telegram}* One last step! Join our Telegram Community to complete your campaign registration 👇
+X Username: *@${twitter}* One last step! Join our Telegram Community to complete your campaign registration 👇
 *Once you have joined, click 'I have joined' below to confirm your status.*`,
       {
         parse_mode: 'Markdown',
@@ -327,10 +305,9 @@ X Username: *@${twitter}* Telegram: *@${telegram}* One last step! Join our Teleg
         }
       }
     );
-
-    // Note: State is now 'awaiting_membership_check', which is handled by the callback_query listener.
-    // The state is NOT cleared here.
   }
+
+  // The 'awaiting_telegram' step has been removed.
 });
 
 
