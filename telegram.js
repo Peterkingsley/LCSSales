@@ -11,7 +11,7 @@ bot.setWebHook(`${WEB_URL}${SECRET_PATH}`);
 
 const LOCALCOINSWAP_SIGNUP_URL = 'https://localcoinswap.com';
 const LOCALCOINSWAP_X_URL = 'https://x.com/LocalCoinSwap_';
-const LOCALCOINSWAP_TG_COMMUNITY_URL = 'https://t.me/LocalCoinSwapCommunity';
+const LOCALCOINSWAP_TG_COMMUNITY_URL = 'https://t.me/Localtest21';
 
 // 💡 NEW: The username of the group for the membership check
 // Use your specific group ID: @localtest21
