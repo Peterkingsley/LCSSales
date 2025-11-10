@@ -202,9 +202,11 @@ To get started, follow our X account below 👇`,
           // Fetch the stored twitter handle for re-display 
           let twitter = 'your X username';
           if (dbPool) {
-             const result = await dbPool.query("SELECT display_name FROM users WHERE chat_id = $1", [chatId]);
+             // 💡 FIX: Change 'display_name' to the correct column 'x_handle' for the Twitter handle.
+             const result = await dbPool.query("SELECT x_handle FROM users WHERE chat_id = $1", [chatId]); 
              if (result.rows.length > 0) {
-                 twitter = result.rows[0].display_name;
+                 // 💡 FIX: Change 'display_name' to the correct column 'x_handle'.
+                 twitter = result.rows[0].x_handle; 
              }
           }
            
@@ -353,14 +355,14 @@ bot.on('message', async (msg) => {
         // Save data, using the user's provided X handle and their Telegram username
         await dbPool.query(
           // Uses ON CONFLICT to update existing users or insert new ones
-          // FIX: Use multi-line template literal for robust SQL parsing
+          // 💡 FIX: Change 'display_name' to the correct column names: 'username' for Telegram and 'x_handle' for Twitter.
           `
-            INSERT INTO users (id, chat_id, username, display_name, user_state) 
+            INSERT INTO users (id, chat_id, username, x_handle, user_state) 
             VALUES ($1, $2, $3, $4, $5) 
             ON CONFLICT (chat_id) 
             DO UPDATE SET 
               username = EXCLUDED.username, 
-              display_name = EXCLUDED.display_name, 
+              x_handle = EXCLUDED.x_handle, 
               user_state = EXCLUDED.user_state
           `,
           [userId, userId, telegram, twitter, 'awaiting_membership_check'] // Mapping: id, chat_id, telegram_handle, twitter_handle, user_state
@@ -407,8 +409,10 @@ X Username: *@${twitter}* One last step! Join our Telegram Community to complete
     try {
         // 2. Save the ID, referral link, and update state to 'active'
         if (dbPool) {
+             // 💡 NOTE: The DB schema has 'localcoinswap_id' and 'ref_code'
+             // Mapping to: localcoinswap_id = user's ID, ref_code = generated link.
              await dbPool.query(
-                "UPDATE users SET localcoinswap_id = $1, referral_link = $2, user_state = 'active' WHERE chat_id = $3",
+                "UPDATE users SET localcoinswap_id = $1, ref_code = $2, user_state = 'active' WHERE chat_id = $3",
                 [localcoinswapId, referralLink, chatId]
             );
         }
