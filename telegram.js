@@ -97,8 +97,7 @@ bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
             // Check if the refCode is a valid referrer's ID
             const referrerResult = await dbPool.query("SELECT id FROM users WHERE id = $1", [refCode]);
             if (referrerResult.rows.length > 0) {
-                // 💡 FIX 2: Use the string refCode directly instead of parseInt()
-                // The database column is now BIGINT and can handle the large ID safely.
+                // Use the string refCode directly for BIGINT compatibility
                 referrerId = refCode; 
             }
         } catch (err) {
@@ -109,7 +108,7 @@ bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
     // UPSERT the user with the referrer's ID
     if (dbPool) {
         try {
-            // 💡 NEW/FIXED: Use ON CONFLICT (id) to update existing user data, including setting the referred_by_user_id
+            // Use ON CONFLICT (id) to update existing user data, setting referred_by_user_id only on first interaction
             await dbPool.query(
                 `
                 INSERT INTO users (id, chat_id, username, telegram_display_name, referred_by_user_id) 
@@ -149,15 +148,14 @@ bot.on('callback_query', async (query) => {
 
   switch (data) {
     // -------------------------
-    // CREATE ACCOUNT FLOW (MODIFIED TO DISPLAY PERSONAL BOT LINK)
+    // CREATE ACCOUNT FLOW 
     // -------------------------
     case 'create_account':
        let linkResult = await dbPool.query("SELECT ref_code FROM users WHERE id = $1", [userId]);
        let botReferralLink = BOT_BASE_URL + userId;
        let messageText = `🚀 Awesome! Click below to create your LocalCoinSwap account.`;
        
-       // 💡 NEW: If the user has a ref_code (meaning they completed the campaign), 
-       // let them share their *bot* referral link.
+       // If the user has a ref_code (completed campaign), show the bot referral link.
        if (linkResult.rows.length > 0 && linkResult.rows[0].ref_code) {
            messageText += `\n\n*Your Bot Referral Link:* \n\`${botReferralLink}\``;
        }
@@ -169,7 +167,7 @@ bot.on('callback_query', async (query) => {
           reply_markup: {
             inline_keyboard: [
               [{ text: '🔗 Sign Up', url: LOCALCOINSWAP_SIGNUP_URL }],
-              // 💡 NEW: Show 'Share Bot Link' only if they have a LocalCoinSwap ID saved
+              // Show 'Share Bot Link' only if they have a LocalCoinSwap ID saved
               ...(linkResult.rows.length > 0 && linkResult.rows[0].ref_code ? [[{ text: '📣 Share Bot Link', switch_inline_query: botReferralLink }]] : []),
               [{ text: '🏠 Main Menu', callback_data: 'main_menu' }]
             ]
@@ -179,10 +177,44 @@ bot.on('callback_query', async (query) => {
       break;
 
     // -------------------------
-    // JOIN CAMPAIGN FLOW
+    // JOIN CAMPAIGN FLOW (MODIFIED FOR COMPLETION CHECK)
     // -------------------------
     case 'join_campaign':
-      // Existing logic to start the campaign flow
+      // 💡 NEW: Check if the user has already completed the campaign
+      let userData = null;
+      if (dbPool) {
+          try {
+              const result = await dbPool.query("SELECT ref_code, referral_count FROM users WHERE id = $1", [userId]);
+              if (result.rows.length > 0) {
+                  userData = result.rows[0];
+              }
+          } catch (error) {
+              console.error('DB Error fetching user data for join_campaign:', error.message);
+          }
+      }
+
+      // If user has a ref_code, they have completed the campaign
+      if (userData && userData.ref_code) {
+          await bot.sendMessage(chatId,
+            `✅ *Campaign Completed!* You have already successfully registered your LocalCoinSwap ID and generated your links. You can't join the campaign steps again.
+            
+            Use the options below to track your progress and invite more users:`,
+            {
+              parse_mode: 'Markdown',
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: '🔗 Get My Referral Links', callback_data: 'get_links' }],
+                  [{ text: '👥 My Referrals', callback_data: 'show_my_referrals' }],
+                  [{ text: '🏆 View Leaderboard', callback_data: 'leaderboard' }],
+                  [{ text: '🏠 Main Menu', callback_data: 'main_menu' }]
+                ]
+              }
+            }
+          );
+          break; // Stop here if already completed
+      }
+
+      // Existing logic to start the campaign flow (if not completed)
       await bot.sendMessage(chatId,
         `🎉 *Welcome to the LocalCoinSwap Referral Campaign!* Where P2P traders make the most out of the market.  
 
@@ -204,12 +236,111 @@ To get started, follow our X account below 👇`,
       );
       break;
 
+
     // -------------------------
-    // MEMBERSHIP CHECK HANDLER (The core new logic)
+    // GET MY REFERRAL LINKS HANDLER (NEW)
+    // -------------------------
+    case 'get_links':
+        try {
+            const result = await dbPool.query("SELECT ref_code FROM users WHERE id = $1", [userId]);
+            const refCode = result.rows.length > 0 ? result.rows[0].ref_code : null;
+            const botReferralLink = BOT_BASE_URL + userId;
+
+            if (refCode) {
+                await bot.sendMessage(chatId,
+                    `🔗 *Your Referral Links:*\n\n` +
+                    `**LocalCoinSwap Referral Link:**\n\`${refCode}\`\n\n` +
+                    `**Bot Referral Link (for campaign invites):**\n\`${botReferralLink}\``,
+                    {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            inline_keyboard: [
+                                [{ text: '📣 Share Bot Link', switch_inline_query: botReferralLink }],
+                                [{ text: '🏠 Main Menu', callback_data: 'main_menu' }]
+                            ]
+                        }
+                    }
+                );
+            } else {
+                await bot.sendMessage(chatId, "⚠️ You have not yet completed the campaign steps. Please use the '🎯 Join Campaign' button from the main menu to get your links.");
+            }
+        } catch (error) {
+            console.error('DB Error fetching referral links:', error.message);
+            await bot.sendMessage(chatId, "🚫 A database error occurred while fetching your links.");
+        }
+        break;
+
+    // -------------------------
+    // SHOW MY REFERRALS HANDLER (NEW)
+    // -------------------------
+    case 'show_my_referrals':
+        try {
+            const result = await dbPool.query("SELECT referral_count, ref_code FROM users WHERE id = $1", [userId]);
+            const row = result.rows[0];
+
+            if (row && row.ref_code) {
+                await bot.sendMessage(chatId,
+                    `👥 *My Referrals:*\n\nYou currently have **${row.referral_count || 0}** successful referrals. Keep inviting users to climb the leaderboard!`,
+                    {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            inline_keyboard: [
+                                [{ text: '🏆 View Leaderboard', callback_data: 'leaderboard' }],
+                                [{ text: '🏠 Main Menu', callback_data: 'main_menu' }]
+                            ]
+                        }
+                    }
+                );
+            } else {
+                await bot.sendMessage(chatId, "⚠️ You need to complete the campaign first to start tracking referrals. Please use the '🎯 Join Campaign' button.");
+            }
+        } catch (error) {
+            console.error('DB Error fetching referral count:', error.message);
+            await bot.sendMessage(chatId, "🚫 A database error occurred while fetching your referral count.");
+        }
+        break;
+
+    // -------------------------
+    // LEADERBOARD HANDLER (NEW)
+    // -------------------------
+    case 'leaderboard':
+        try {
+            const leaderboardResult = await dbPool.query(
+                "SELECT telegram_display_name, username, referral_count FROM users WHERE referral_count > 0 ORDER BY referral_count DESC LIMIT 10"
+            );
+
+            let leaderboardText = "🏆 *Top 10 Referrers:*\n\n";
+
+            if (leaderboardResult.rows.length === 0) {
+                leaderboardText += "No successful referrals yet! Be the first to start the board.";
+            } else {
+                leaderboardResult.rows.forEach((row, index) => {
+                    // Use display name, or username, or a generic placeholder
+                    const name = row.telegram_display_name || row.username || `User ${index + 1}`;
+                    leaderboardText += `${index + 1}. *${name}* - ${row.referral_count} referrals\n`;
+                });
+            }
+
+            await bot.sendMessage(chatId, leaderboardText, {
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: '🏠 Main Menu', callback_data: 'main_menu' }]
+                    ]
+                }
+            });
+
+        } catch (error) {
+            console.error('DB Error fetching leaderboard:', error.message);
+            await bot.sendMessage(chatId, "🚫 A database error occurred while fetching the leaderboard.");
+        }
+        break;
+
+    // -------------------------
+    // MEMBERSHIP CHECK HANDLER 
     // -------------------------
     case 'check_membership':
-      // ... (no changes needed here, as it sets the state to STATE_AWAITING_LOCALCOINSWAP_ID)
-      // The old logic is kept for brevity and because it correctly sets the state for the next step.
+      // ... (no changes in this block)
 
       // Immediately tell the user the check is happening
       await bot.answerCallbackQuery(query.id, 'Checking your membership status...');
@@ -224,7 +355,7 @@ To get started, follow our X account below 👇`,
         if (isMember) {
           // Success: User is a member
           
-          // 💡 MODIFIED LOGIC: Update the user's state to wait for their LocalCoinSwap ID
+          // MODIFIED LOGIC: Update the user's state to wait for their LocalCoinSwap ID
           if (dbPool) {
              await dbPool.query(
                 "UPDATE users SET is_member = TRUE, user_state = $1 WHERE chat_id = $2",
@@ -262,10 +393,8 @@ To get started, follow our X account below 👇`,
           // Fetch the stored twitter handle for re-display 
           let twitter = 'your X username';
           if (dbPool) {
-             // 💡 FIX: Change 'display_name' to the correct column 'x_handle' for the Twitter handle.
              const result = await dbPool.query("SELECT x_handle FROM users WHERE chat_id = $1", [chatId]); 
              if (result.rows.length > 0) {
-                 // 💡 FIX: Change 'display_name' to the correct column 'x_handle'.
                  twitter = result.rows[0].x_handle; 
              }
           }
@@ -301,7 +430,7 @@ X Username: *@${twitter}*`,
     // AFTER FOLLOWING X
     // -------------------------
     case 'follow_done':
-      // 💡 FIX: Set the state in the database immediately using a proper UPSERT.
+      // Set the state in the database immediately using a proper UPSERT.
       if (dbPool) {
             await dbPool.query(
                 // UPSERT: Insert a new minimal user record or update the state of an existing one.
@@ -326,7 +455,6 @@ X Username: *@${twitter}*`,
 
     // -------------------------
     // SELL USDT FLOW
-    // ... 
     // -------------------------
     case 'sell_usdt':
       await bot.sendMessage(chatId,
@@ -344,7 +472,6 @@ X Username: *@${twitter}*`,
 
     // -------------------------
     // BUY USDT FLOW
-    // ... 
     // -------------------------
     case 'buy_usdt':
       await bot.sendMessage(chatId,
@@ -398,7 +525,7 @@ bot.on('message', async (msg) => {
   const userState = await getUserState(chatId);
 
   // ===================================================================
-  // 💡 FIX: Handle AWAITING_TWITTER state (User enters X handle)
+  // Handle AWAITING_TWITTER state (User enters X handle)
   // ===================================================================
   if (userState === 'awaiting_twitter') {
     const twitter = text.trim().replace(/^@/, ''); // Remove optional leading @
@@ -411,7 +538,6 @@ bot.on('message', async (msg) => {
         // Save data, using the user's provided X handle and their Telegram username
         await dbPool.query(
           // Uses ON CONFLICT to update existing users or insert new ones
-          // 💡 FIX: Change 'display_name' to the correct column names: 'username' for Telegram and 'x_handle' for Twitter.
           `
             INSERT INTO users (id, chat_id, username, x_handle, user_state) 
             VALUES ($1, $2, $3, $4, $5) 
@@ -448,7 +574,7 @@ X Username: *@${twitter}* One last step! Join our Telegram Community to complete
   }
   
   // ===================================================================
-  // 💡 MODIFIED: Handle AWAITING_LOCALCOINSWAP_ID state (Referral Logic Added)
+  // Handle AWAITING_LOCALCOINSWAP_ID state (Referral Logic)
   // ===================================================================
   if (userState === STATE_AWAITING_LOCALCOINSWAP_ID) {
     const localcoinswapId = text.trim();
@@ -468,14 +594,13 @@ X Username: *@${twitter}* One last step! Join our Telegram Community to complete
         
         // 2. Save the ID, referral link, and update state to 'active'
         if (dbPool) {
-             // 💡 MODIFIED: Get the referred_by_user_id before updating the user
+             // Get the referred_by_user_id before updating the user
              const userResult = await dbPool.query("SELECT referred_by_user_id FROM users WHERE id = $1", [userId]);
              if (userResult.rows.length > 0) {
                  referrerId = userResult.rows[0].referred_by_user_id;
              }
             
-             // 💡 NOTE: The DB schema has 'localcoinswap_id' and 'ref_code'
-             // Mapping to: localcoinswap_id = user's ID, ref_code = generated link.
+             // Save localcoinswap_id and generated ref_code (link)
              await dbPool.query(
                 "UPDATE users SET localcoinswap_id = $1, ref_code = $2, user_state = 'active' WHERE id = $3",
                 [localcoinswapId, referralLink, userId]
@@ -483,7 +608,6 @@ X Username: *@${twitter}* One last step! Join our Telegram Community to complete
         }
         
         // 3. Referral Completion Logic: Increment referrer count and send notification
-        // This will now work correctly after the DB column type is fixed to BIGINT
         if (referrerId) {
             // Increment the referrer's count
             await dbPool.query("UPDATE users SET referral_count = referral_count + 1 WHERE id = $1", [referrerId]);
