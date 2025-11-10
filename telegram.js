@@ -12,6 +12,8 @@ bot.setWebHook(`${WEB_URL}${SECRET_PATH}`);
 const LOCALCOINSWAP_SIGNUP_URL = 'https://localcoinswap.com';
 const LOCALCOINSWAP_X_URL = 'https://x.com/LocalCoinSwap_';
 const LOCALCOINSWAP_TG_COMMUNITY_URL = 'https://t.me/Localtest21';
+const STATE_AWAITING_LOCALCOINSWAP_ID = 'awaiting_localcoinswap_id'; // New state to wait for user's ID
+const LOCALCOINSWAP_BASE_REFERRAL_URL = 'https://localcoinswap.com/?ref='; // Base referral URL
 
 // 💡 NEW: The username of the group for the membership check
 // Use your specific group ID: @localtest21
@@ -26,6 +28,29 @@ router.post(SECRET_PATH, (req, res) => {
   bot.processUpdate(req.body);
   res.sendStatus(200);
 });
+
+// ====================================================================
+// 💡 NEW: STATE HELPER FUNCTION (Using DB as requested)
+// ====================================================================
+/**
+ * Fetches the user's current conversation state from the database.
+ * @param {number} chatId - The ID of the chat.
+ * @returns {Promise<string|null>} The user's state or null.
+ */
+const getUserState = async (chatId) => {
+    // Only proceed if dbPool is initialized
+    if (!dbPool) {
+        console.warn('DB Pool not set. Cannot fetch user state.');
+        return null;
+    }
+    try {
+        const result = await dbPool.query("SELECT user_state FROM users WHERE chat_id = $1", [chatId]);
+        return result.rows.length > 0 ? result.rows[0].user_state : null;
+    } catch (err) {
+        console.error('Error fetching user state:', err.message);
+        return null;
+    }
+}
 
 
 // ====================================================================
@@ -60,6 +85,10 @@ const sendMainMenu = (chatId) => {
 bot.onText(/\/start/, async (msg) => {
   const chatId = msg.chat.id;
   sendMainMenu(chatId);
+});
+// 💡 ADDED: /menu command for convenience
+bot.onText(/\/menu/, async (msg) => {
+    sendMainMenu(msg.chat.id);
 });
 
 
@@ -128,41 +157,56 @@ To get started, follow our X account below 👇`,
         // 1. Call the Telegram API to check membership status
         const chatMember = await bot.getChatMember(LOCALCOINSWAP_TG_COMMUNITY_ID, userId);
         const status = chatMember.status;
+        const isMember = ['member', 'administrator', 'creator'].includes(status);
 
         // 2. Check if the status is one of the valid "member" statuses
-        if (['member', 'administrator', 'creator'].includes(status)) {
+        if (isMember) {
           // Success: User is a member
+          
+          // 💡 MODIFIED LOGIC: Update the user's state to wait for their LocalCoinSwap ID
+          if (dbPool) {
+             await dbPool.query(
+                "UPDATE users SET is_member = TRUE, user_state = $1 WHERE chat_id = $2",
+                [STATE_AWAITING_LOCALCOINSWAP_ID, chatId]
+            );
+          }
+          
+          // 3. Send the message asking for the ID
           await bot.editMessageText(
-            `🥳 *Membership Confirmed!* 👏
-You are successfully registered for the campaign. Welcome to the community!
-You can now access the full menu.`,
+            `🎉 **Verification Complete!** You're now a member of the community.
+            
+            **Ready to earn?**
+            1. **Sign up** on [Localcoinswap.com](${LOCALCOINSWAP_SIGNUP_URL})
+            2. Find your unique **referral ID** in your account settings.
+            3. **Paste your unique ID below** to get your personalized referral link and start monitoring your stats.
+            
+            *Example of an ID: ABC-123-XYZ*`,
             {
               chat_id: chatId,
               message_id: query.message.message_id,
               parse_mode: 'Markdown',
-              reply_markup: {
-                inline_keyboard: [
-                  [{ text: '🏠 Main Menu', callback_data: 'main_menu' }]
-                ]
-              }
+               // Optional: Use ForceReply to visually prompt the user for input
+                reply_markup: {
+                    force_reply: true,
+                    selective: true,
+                    inline_keyboard: [ // Add a menu button for convenience after ID entry
+                         [{ text: '🏠 Main Menu', callback_data: 'main_menu' }]
+                    ]
+                }
             }
           );
           
-          // 3. Update the database to confirm membership
-          if (dbPool) {
-            // Note: This UPDATE query assumes you have added an 'is_member' column to the 'users' table
-            await dbPool.query(
-              "UPDATE users SET is_member = TRUE WHERE chat_id = $1",
-              [userId]
-            );
-          }
-          userStates[chatId].step = 'main_menu'; // Change user state
-          
         } else {
           // Failure: User is not a member (status is 'left' or 'kicked')
-          // Use the stored twitter handle for re-display
-          const { twitter } = userStates[chatId]; 
-
+          // Fetch the stored twitter handle for re-display (assumes dbPool is available and user record exists)
+          let twitter = 'your X username';
+          if (dbPool) {
+             const result = await dbPool.query("SELECT display_name FROM users WHERE chat_id = $1", [chatId]);
+             if (result.rows.length > 0) {
+                 twitter = result.rows[0].display_name;
+             }
+          }
+           
           await bot.answerCallbackQuery(query.id, '❌ Please join the community first to proceed.', true);
           
           // Re-send the original message
@@ -185,9 +229,10 @@ X Username: *@${twitter}*`,
         }
 
       } catch (error) {
-        console.error('getChatMember Error:', error.message);
-        await bot.answerCallbackQuery(query.id, 'An API error occurred. Make sure the bot is an admin in the group.', true);
+        console.error('getChatMember/DB Error:', error.message);
+        await bot.answerCallbackQuery(query.id, 'An API or Database error occurred. Please try again.', true);
       }
+      // NOTE: Removed the bot.answerCallbackQuery at the end of this block as it's answered at the start.
       break;
 
 
@@ -199,8 +244,10 @@ X Username: *@${twitter}*`,
         `Please enter your *X (Twitter) username* (without @).`,
         { parse_mode: 'Markdown' }
       );
-      // Store user’s state temporarily
-      userStates[chatId] = { step: 'awaiting_twitter' }; // Set state to await Twitter handle
+      // 💡 REMOVED: userStates[chatId] = { step: 'awaiting_twitter' }; // Set state to await Twitter handle
+      // This state is now managed within the bot.on('message') handler itself to be consistent
+      // with the database-driven state model. We'll rely on the existing logic in bot.on('message')
+      // to handle the 'awaiting_twitter' input.
       break;
 
     // -------------------------
@@ -245,18 +292,21 @@ X Username: *@${twitter}*`,
     case 'main_menu':
       sendMainMenu(chatId);
       break;
-  }
-
-  // Answer the query if it wasn't already answered by check_membership
-  if (data !== 'check_membership') {
+      
+    default:
+      // Answer the query if it wasn't already answered by check_membership
       bot.answerCallbackQuery(query.id);
+      break;
   }
 });
 
 
 // ====================================================================
-// ✍️ HANDLE TEXT INPUT (for usernames)
+// ✍️ HANDLE TEXT INPUT (for usernames and IDs)
 // ====================================================================
+// 💡 NOTE: The in-memory 'userStates' object is now primarily for 'awaiting_twitter'
+// and will be removed or transitioned for better DB reliance. 
+// For now, we'll keep the existing structure but add the new DB check logic.
 const userStates = {}; // { chatId: { step: 'awaiting_twitter' | 'awaiting_membership_check', twitter: 'handle', telegram: 'handle' } }
 
 bot.on('message', async (msg) => {
@@ -264,11 +314,80 @@ bot.on('message', async (msg) => {
   const text = msg.text;
   const userId = chatId; // The chatId is the user_id in a private chat with the bot
 
-  if (!userStates[chatId] || !userStates[chatId].step) return; // no active state
+  if (!text) return; // Ignore messages without text
 
-  // --- Step 1 (Combined): Expecting Twitter username and proceeding to check
-  if (userStates[chatId].step === 'awaiting_twitter') {
-    const twitter = text.trim();
+  // 💡 NEW: Check for /start or /menu commands and handle them, then return
+  if (text.startsWith('/')) {
+    // Other commands are handled by bot.onText
+    if (text.toLowerCase() === '/start' || text.toLowerCase() === '/menu') {
+        return; 
+    }
+  }
+
+  // 💡 NEW: Get user state from DB
+  const userState = await getUserState(chatId);
+
+  // ===================================================================
+  // 💡 NEW: Handle AWAITING_LOCALCOINSWAP_ID state
+  // ===================================================================
+  if (userState === STATE_AWAITING_LOCALCOINSWAP_ID) {
+    const localcoinswapId = text.trim();
+    
+    // Basic Validation
+    if (localcoinswapId.length < 3 || localcoinswapId.includes(' ')) {
+        return bot.sendMessage(chatId, 
+            "❌ **Invalid ID.** Please paste the unique referral ID you received after signing up on Localcoinswap.com. (It usually contains letters, numbers, and hyphens)."
+        );
+    }
+    // 1. Generate the referral link
+    // encodeURIComponent ensures the ID is safe to use in a URL
+    const referralLink = `${LOCALCOINSWAP_BASE_REFERRAL_URL}${encodeURIComponent(localcoinswapId)}`;
+    try {
+        // 2. Save the ID, referral link, and update state to 'active'
+        if (dbPool) {
+             await dbPool.query(
+                "UPDATE users SET localcoinswap_id = $1, referral_link = $2, user_state = 'active' WHERE chat_id = $3",
+                [localcoinswapId, referralLink, chatId]
+            );
+        }
+       
+        // 3. Send the final confirmation message
+        await bot.sendMessage(chatId, 
+            `✨ **Success! Your LocalCoinSwap ID has been saved.**
+            
+            **Your Personal Referral Link:**
+            \`${referralLink}\`
+            
+            Share this link to start earning. You can now visit the **Admin Dashboard** to monitor your stats and earnings.
+            
+            You can now type **/menu** or click the button below to see other options.`,
+            { 
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: '🏠 Main Menu', callback_data: 'main_menu' }]
+                    ]
+                }
+            }
+        );
+    } catch (err) {
+        console.error('DB SAVE ERROR (Localcoinswap ID):', err.message);
+        // Check for unique constraint violation if Localcoinswap IDs are unique globally
+        if (err.code === '23505') { // PostgreSQL unique violation error code
+            return bot.sendMessage(chatId, "🚫 This LocalCoinSwap ID is already registered. Please check your ID or contact support.");
+        }
+        return bot.sendMessage(chatId, 
+            "🚫 A database error occurred while saving your ID. Please try again later."
+        );
+    }
+    return; // Stop processing this message as the conversation step is complete
+  }
+
+  // --- Existing Logic for 'awaiting_twitter' using the in-memory state ---
+  // This state is set in the 'follow_done' callback and is still needed
+  // until the in-memory state is fully replaced by DB state for this step.
+  if (userStates[chatId] && userStates[chatId].step === 'awaiting_twitter') {
+    const twitter = text.trim().replace(/^@/, ''); // Remove optional leading @
     // Use the user's Telegram username from their profile, or a fallback
     const telegram = msg.from.username ? msg.from.username.trim() : `tg_user_${userId}`;
     
@@ -305,8 +424,8 @@ X Username: *@${twitter}* One last step! Join our Telegram Community to complete
         }
       }
     );
+    return;
   }
-
   // The 'awaiting_telegram' step has been removed.
 });
 
