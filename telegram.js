@@ -97,7 +97,9 @@ bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
             // Check if the refCode is a valid referrer's ID
             const referrerResult = await dbPool.query("SELECT id FROM users WHERE id = $1", [refCode]);
             if (referrerResult.rows.length > 0) {
-                referrerId = parseInt(refCode, 10);
+                // 💡 FIX 2: Use the string refCode directly instead of parseInt()
+                // The database column is now BIGINT and can handle the large ID safely.
+                referrerId = refCode; 
             }
         } catch (err) {
             console.error('Error checking referrer ID:', err.message);
@@ -481,6 +483,7 @@ X Username: *@${twitter}* One last step! Join our Telegram Community to complete
         }
         
         // 3. Referral Completion Logic: Increment referrer count and send notification
+        // This will now work correctly after the DB column type is fixed to BIGINT
         if (referrerId) {
             // Increment the referrer's count
             await dbPool.query("UPDATE users SET referral_count = referral_count + 1 WHERE id = $1", [referrerId]);
