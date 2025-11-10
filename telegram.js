@@ -15,7 +15,7 @@ const LOCALCOINSWAP_TG_COMMUNITY_URL = 'https://t.me/Localtest21';
 const STATE_AWAITING_LOCALCOINSWAP_ID = 'awaiting_localcoinswap_id'; // New state to wait for user's ID
 const LOCALCOINSWAP_BASE_REFERRAL_URL = 'https://localcoinswap.com/?ref='; // Base referral URL
 // 💡 NEW: Base URL for bot-to-bot deep-linking
-const BOT_BASE_URL = 'https://t.me/YOUR_BOT_USERNAME?start='; // *** Update 'YOUR_BOT_USERNAME' ***
+const BOT_BASE_URL = 'https://t.me/LCSContest_bot?start=';
 
 // 💡 NEW: The username of the group for the membership check
 // Use your specific group ID: @localtest21
