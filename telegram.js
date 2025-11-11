@@ -157,11 +157,7 @@ bot.on('callback_query', async (query) => {
     case 'create_account':
        let linkResult = await dbPool.query("SELECT ref_code FROM users WHERE id = $1", [userId]);
        let botReferralLink = BOT_BASE_URL + userId;
-       let messageText = `🚀 Awesome! Click below to create your LocalCoinSwap account.`;
-       
-       // If the user has a ref_code (completed campaign), show the bot referral link.
-       if (linkResult.rows.length > 0 && linkResult.rows[0].ref_code) {
-           messageText += `\n\n*Your Bot Referral Link:* \n\`${botReferralLink}\``;
+       let messageText = `Awesome! Click below to create your LocalCoinSwap account.`;
        }
 
       await bot.sendMessage(chatId, 
@@ -200,9 +196,9 @@ bot.on('callback_query', async (query) => {
       // If user has a ref_code, they have completed the campaign
       if (userData && userData.ref_code) {
           await bot.sendMessage(chatId,
-            `✅ *Campaign Completed!* You have already successfully registered your LocalCoinSwap ID and generated your links. You can't join the campaign steps again.
+            `*Campaign Completed!* ✅  You have already successfully registered your LocalCoinSwap ID and generated your links. You can't join the campaign steps again.
             
-            Use the options below to track your progress and invite more users:`,
+Use the options below to track your progress and invite more users:`,
             {
               parse_mode: 'Markdown',
               reply_markup: {
@@ -465,7 +461,7 @@ X Username: *@${twitter}*`,
     // -------------------------
     case 'sell_usdt':
       await bot.sendMessage(chatId,
-        `💸 Ready to sell your USDT safely? Click below to start selling instantly on LocalCoinSwap.`,
+        `Ready to sell your USDT safely? Click below to start selling instantly on LocalCoinSwap.`,
         {
           reply_markup: {
             inline_keyboard: [
@@ -482,7 +478,7 @@ X Username: *@${twitter}*`,
     // -------------------------
     case 'buy_usdt':
       await bot.sendMessage(chatId,
-        `🟢 Want to buy USDT fast and securely? Click below to start trading instantly on LocalCoinSwap.`,
+        `Want to buy USDT fast and securely? Click below to start trading instantly on LocalCoinSwap.`,
         {
           reply_markup: {
             inline_keyboard: [
