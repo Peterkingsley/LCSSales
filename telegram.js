@@ -60,18 +60,22 @@ const getUserState = async (chatId) => {
 // 🏠 MAIN MENU FUNCTION
 // ====================================================================
 const sendMainMenu = (chatId) => {
-  const message = `👋 I am your *Personal LocalCoinSwap Assistant* Which of these would you love me to help you with today?`;
+  const message = `Hey Mate👋, I am your *Personal LocalCoinSwap Assistant* 
+  
+  LocalCoinSwap is your private, non-custodial P2P platform to buy or sell crypto. 
+  
+  Which of these would you love me to help you with today?`;
   
   const options = {
     parse_mode: 'Markdown',
     reply_markup: {
       inline_keyboard: [
         [
-          { text: '🆕 Create Account', callback_data: 'create_account' },
+          { text: '➕ Create Account', callback_data: 'create_account' },
           { text: '🎯 Join Campaign', callback_data: 'join_campaign' }
         ],
         [
-          { text: '💸 Sell USDT', callback_data: 'sell_usdt' },
+          { text: '🔴 Sell USDT', callback_data: 'sell_usdt' },
           { text: '🟢 Buy USDT', callback_data: 'buy_usdt' }
         ]
       ]
@@ -180,7 +184,7 @@ bot.on('callback_query', async (query) => {
     // JOIN CAMPAIGN FLOW (MODIFIED FOR COMPLETION CHECK)
     // -------------------------
     case 'join_campaign':
-      // 💡 NEW: Check if the user has already completed the campaign
+      // 💡Check if the user has already completed the campaign
       let userData = null;
       if (dbPool) {
           try {
@@ -220,7 +224,10 @@ bot.on('callback_query', async (query) => {
 
 Invite other P2P traders to join the LocalCoinSwap Telegram Community and climb the leaderboard!  
 
-🏆 *Top Referrers Win:* 🥇 $100 | 🥈 $60 | 🥉 $40  
+🏆 *Top Referrers Win:* 
+🥇 $100
+🥈 $60
+🥉 $40  
 
 To get started, follow our X account below 👇`,
         {
