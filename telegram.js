@@ -156,7 +156,7 @@ bot.on('callback_query', async (query) => {
     // -------------------------
     case 'create_account':
        let linkResult = await dbPool.query("SELECT ref_code FROM users WHERE id = $1", [userId]);
-       let botReferralLink = BOT_BASE_URL + userId;
+      //  let botReferralLink = BOT_BASE_URL + userId;
        let messageText = `Awesome! Click below to create your LocalCoinSwap account.`;
        }
 
@@ -627,14 +627,11 @@ X Username: *@${twitter}* One last step! Join our Telegram Community to complete
         // 4. Send the final confirmation message to the new user
         await bot.sendMessage(chatId, 
             `✨ **Success! Your LocalCoinSwap ID has been saved.**
+
+**Your Bot Referral Link (to invite P2P traders to the campaign):**
+\`${BOT_BASE_URL}${userId}\`
             
-            **Your Personal LocalCoinSwap Referral Link:**
-            \`${referralLink}\`
-            
-            **Your Bot Referral Link (to invite P2P traders to the campaign):**
-            \`${BOT_BASE_URL}${userId}\`
-            
-            Share these links to start earning. You can now type **/menu** or click the button below to see other options.`,
+  Share these links to start earning.`,
             { 
                 parse_mode: 'Markdown',
                 reply_markup: {
