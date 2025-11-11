@@ -62,9 +62,9 @@ const getUserState = async (chatId) => {
 const sendMainMenu = (chatId) => {
   const message = `Hey Mate👋, I am your *Personal LocalCoinSwap Assistant* 
   
-  LocalCoinSwap is your private, non-custodial P2P platform to buy or sell crypto. 
+LocalCoinSwap is your private, non-custodial P2P platform to buy or sell crypto. 
   
-  Which of these would you love me to help you with today?`;
+Which of these would you love me to help you with today?`;
   
   const options = {
     parse_mode: 'Markdown',
