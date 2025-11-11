@@ -219,7 +219,8 @@ Use the options below to track your progress and invite more users:`,
 
 Invite other P2P traders to join the LocalCoinSwap Telegram Community and climb the leaderboard!  
 
-🏆 *Top Referrers Win:* 🥇 $100
+🏆 *Top Referrers Win:* 
+🥇 $100
 🥈 $60
 🥉 $40  
 
@@ -228,9 +229,9 @@ To get started, follow our X account below 👇`,
           parse_mode: 'Markdown',
           reply_markup: {
             inline_keyboard: [
-              [{ text: '🐦 Follow our X', url: LOCALCOINSWAP_X_URL }],
-              [{ text: '✅ Done', callback_data: 'follow_done' }],
-              [{ text: '🏠 Main Menu', callback_data: 'main_menu' }]
+              [{ text: 'Follow our X', url: LOCALCOINSWAP_X_URL }],
+              [{ text: 'Done', callback_data: 'follow_done' }],
+              [{ text: 'Main Menu', callback_data: 'main_menu' }]
             ]
           }
         }
@@ -406,7 +407,7 @@ To get started, follow our X account below 👇`,
           await bot.editMessageText(
             `❌ *Membership check failed.* Please ensure you have joined the Telegram Community and then click the 'I have joined' button again.
 
-X Username: *@${twitter}*`,
+*${twitter}*`,
             {
               chat_id: chatId,
               message_id: query.message.message_id,
@@ -414,7 +415,7 @@ X Username: *@${twitter}*`,
               reply_markup: {
                 inline_keyboard: [
                   [{ text: '💬 Join Telegram Community', url: LOCALCOINSWAP_TG_COMMUNITY_URL }],
-                  [{ text: '✅ I have joined', callback_data: 'check_membership' }]
+                  [{ text: 'I have joined ✅', callback_data: 'check_membership' }]
                 ]
               }
             }
@@ -559,14 +560,14 @@ bot.on('message', async (msg) => {
     // 3. Prompt for community join
     await bot.sendMessage(chatId, 
       `Perfect! ✅  
-X Username: *@${twitter}* One last step! Join our Telegram Community to complete your campaign registration 👇
+*${twitter}* One last step! Join our Telegram Community to complete your campaign registration 👇
 *Once you have joined, click 'I have joined' below to confirm your status.*`,
       {
         parse_mode: 'Markdown',
         reply_markup: {
           inline_keyboard: [
             [{ text: '💬 Join Telegram Community', url: LOCALCOINSWAP_TG_COMMUNITY_URL }],
-            [{ text: '✅ I have joined', callback_data: 'check_membership' }] // New Check button
+            [{ text: 'I have joined', callback_data: 'check_membership ✅' }] // New Check button
           ]
         }
       }
